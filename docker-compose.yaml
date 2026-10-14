@@ -1,0 +1,22 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    container_name: trading_platform
+    ports:
+      - "8000:8000"
+    environment:
+      - APP__NAME=${APP__NAME}
+      - APP__VERSION=${APP__VERSION}
+      - APP__HOST=${APP__HOST}
+      - APP__PORT=${APP__PORT}
+    networks:
+      - todo_network
+    command: bash -c "cd /app && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+networks:
+  todo_network:
+    driver: bridge
+
+volumes:
+  todo_postgres_data:
