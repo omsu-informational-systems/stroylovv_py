@@ -1,3 +1,11 @@
+"""
+Конфигурация приложения через переменные окружения.
+
+Используется env_nested_delimiter="__" для иерархического именования:
+  APP__NAME, APP__VERSION, APP__HOST, APP__PORT в .env
+соответствуют полям app_name, app_version, app_host, app_port.
+"""
+
 from pydantic import AnyHttpUrl, EmailStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,11 +18,11 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
-        env_nested_delimiter="__",  
+        env_nested_delimiter="__",
     )
 
     # --- Метаданные сервиса ---
-    app_name: str = "Breakout-strategy"
+    app_name: str = "breakout-strategy"
     app_version: str = "1.0.0"
 
     # --- Сеть ---

@@ -1,0 +1,11 @@
+# Antigravity Global Project Rules
+
+Always follow the project architecture standards defined in `.antigravity/skills/`:
+- Enforce layer separation using `.antigravity/skills/python-ddd-layers.md`
+- Enforce domain encapsulation using `.antigravity/skills/python-oop-rich-domain.md`
+- Implement storage and integrations using `.antigravity/skills/python-ports-adapters.md`
+
+When writing or refactoring Python code:
+1. Never put ORM models, Pydantic schemas, or framework logic into the `domain/` directory.
+2. Ensure all domain entities protect their invariants via methods, not raw attribute mutations.
+3. Always write unit tests against domain entities without mocking infrastructure.

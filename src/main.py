@@ -1,3 +1,13 @@
+"""
+Точка входа приложения FastAPI.
+
+Содержит:
+- настройку логирования
+- lifespan (graceful startup / shutdown)
+- сборку приложения FastAPI
+- блок __main__ для локального запуска через python -m src.main
+"""
+
 from collections.abc import AsyncIterator
 import logging
 
@@ -8,17 +18,17 @@ from src.api import api_router
 from src.core.config import settings
 
 logging.basicConfig(
-    level=settings.log_level,
+    level=settings.log_level.upper(),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Управление жизненным циклом приложения."""
-    logger.info("Запуск сервиса %s v%s...", settings.app_name, settings.app_version)
+    """Управление жизненным циклом приложения (graceful startup / shutdown)."""
+    logger.info("Запуск сервиса '%s' v%s ...", settings.app_name, settings.app_version)
     yield
-    logger.info("Остановка сервиса %s...", settings.app_name)
+    logger.info("Остановка сервиса '%s' ...", settings.app_name)
 
 
 app = FastAPI(

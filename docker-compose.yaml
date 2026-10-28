@@ -1,22 +1,25 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    image: breakout-strategy:latest
+    container_name: breakout_strategy
     restart: unless-stopped
-    container_name: trading_platform
     ports:
-      - "8000:8000"
-    environment:
-      - APP__NAME=${APP__NAME}
-      - APP__VERSION=${APP__VERSION}
-      - APP__HOST=${APP__HOST}
-      - APP__PORT=${APP__PORT}
+      - "${APP__PORT:-8000}:8000"
+    env_file:
+      - .env
     networks:
-      - todo_network
-    command: bash -c "cd /app && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      - breakout_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 networks:
-  todo_network:
+  breakout_net:
     driver: bridge
-
-volumes:
-  todo_postgres_data:
