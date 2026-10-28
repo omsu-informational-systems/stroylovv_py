@@ -33,3 +33,5 @@ ENV/
 .coverage
 htmlcov/
 .pytest_cache/
+
+.antigravity/
