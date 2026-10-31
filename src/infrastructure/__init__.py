@@ -1,3 +1,8 @@
-from src.infrastructure.strategy import DonchianChannelStrategy
+"""Инфраструктурный слой (Infrastructure Layer).
 
-__all__ = ["DonchianChannelStrategy"]
+Содержит:
+- config/
+- kafka/
+- strategy/
+- mappers/
+"""

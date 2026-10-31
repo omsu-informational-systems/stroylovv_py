@@ -1,23 +1,9 @@
-from src.domain.exceptions import DomainError, InvalidPriceError, InvalidWindowSizeError
-from src.domain.ports import StrategyPort
-from src.domain.value_objects import (
-    Candle,
-    CandleInterval,
-    DonchianBands,
-    Price,
-    Signal,
-    TradeSignal,
-)
+"""Ядро предметной области (Domain Layer).
 
-__all__ = [
-    "Candle",
-    "CandleInterval",
-    "DomainError",
-    "DonchianBands",
-    "InvalidPriceError",
-    "InvalidWindowSizeError",
-    "Price",
-    "Signal",
-    "StrategyPort",
-    "TradeSignal",
-]
+Чистый Python (stdlib only):
+- entities/
+- value_objects/
+- events/
+- exceptions/
+- ports/
+"""
