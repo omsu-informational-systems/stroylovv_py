@@ -2,29 +2,34 @@ from src.domain.entities.candle import Candle
 from src.domain.entities.pair import PairsTradingModel
 from src.domain.entities.recommendation import TradeRecommendation
 from src.domain.ports.strategy import StrategyPort
+from src.infrastructure.config.settings import Settings, settings as default_settings
 
 
 class PairsTradingStrategyAdapter(StrategyPort):
     """
     Адаптер стратегии парного трейдинга (Infrastructure Layer).
 
-    Реализует StrategyPort для связки SBER (бенчмарк) и T (первичный торгуемый актив).
+    Реализует StrategyPort. Все параметры (тикеры, окно, z-пороги)
+    загружаются напрямую из конфигурации Settings (.env).
     """
 
     def __init__(
         self,
-        primary_ticker: str = "T",
-        benchmark_ticker: str = "SBER",
-        window: int = 30,
-        z_entry: float = 1.8,
-        z_exit: float = 0.5,
+        settings: Settings | None = None,
+        *,
+        primary_ticker: str | None = None,
+        benchmark_ticker: str | None = None,
+        window: int | None = None,
+        z_entry: float | None = None,
+        z_exit: float | None = None,
     ) -> None:
+        cfg = settings or default_settings
         self._model = PairsTradingModel(
-            primary_ticker=primary_ticker,
-            benchmark_ticker=benchmark_ticker,
-            window=window,
-            z_entry=z_entry,
-            z_exit=z_exit,
+            primary_ticker=primary_ticker or cfg.pairs_primary_ticker,
+            benchmark_ticker=benchmark_ticker or cfg.pairs_benchmark_ticker,
+            window=window if window is not None else cfg.pairs_window,
+            z_entry=z_entry if z_entry is not None else cfg.pairs_z_entry,
+            z_exit=z_exit if z_exit is not None else cfg.pairs_z_exit,
         )
 
     @property
@@ -42,4 +47,3 @@ class PairsTradingStrategyAdapter(StrategyPort):
     def evaluate(self, candle: Candle) -> TradeRecommendation:
         recommendation, _event = self._model.process_candle(candle)
         return recommendation
-

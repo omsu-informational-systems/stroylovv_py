@@ -24,11 +24,11 @@ class HybridTrioModel:
 
     def __init__(
         self,
-        primary_ticker: str = "T",
-        benchmark_ticker: str = "SBER",
-        momentum_ticker: str = "OZON",
-        donchian_window: int = 20,
-        pairs_window: int = 30,
+        primary_ticker: str,
+        benchmark_ticker: str,
+        momentum_ticker: str,
+        donchian_window: int,
+        pairs_window: int,
         z_entry: float = 1.8,
         z_exit: float = 0.5,
         volume_multiplier: float = 1.25,

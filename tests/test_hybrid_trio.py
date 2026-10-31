@@ -33,20 +33,26 @@ def _candle(
 
 def test_hybrid_trio_invariants() -> None:
     with pytest.raises(InvalidPairConfigError):
-        HybridTrioModel(donchian_window=1)
+        HybridTrioModel("T", "SBER", "OZON", donchian_window=1, pairs_window=5)
 
     with pytest.raises(InvalidPairConfigError):
-        HybridTrioModel(pairs_window=2)
+        HybridTrioModel("T", "SBER", "OZON", donchian_window=5, pairs_window=2)
 
     with pytest.raises(InvalidPairConfigError):
-        HybridTrioModel(z_entry=-1.0)
+        HybridTrioModel("T", "SBER", "OZON", donchian_window=5, pairs_window=5, z_entry=-1.0)
 
     with pytest.raises(InvalidPairConfigError):
-        HybridTrioModel(z_entry=1.5, z_exit=1.6)
+        HybridTrioModel("T", "SBER", "OZON", donchian_window=5, pairs_window=5, z_entry=1.5, z_exit=1.6)
+
+    with pytest.raises(InvalidPairConfigError):
+        HybridTrioModel("", "SBER", "OZON", donchian_window=5, pairs_window=5)
+
+    with pytest.raises(InvalidPairConfigError):
+        HybridTrioModel("SBER", "SBER", "OZON", donchian_window=5, pairs_window=5)
 
 
 def test_hybrid_foreign_tickers_hold() -> None:
-    model = HybridTrioModel()
+    model = HybridTrioModel("T", "SBER", "OZON", donchian_window=5, pairs_window=5)
     for foreign_ticker in ["GAZP", "MAGN", "MOEX", "TATN"]:
         rec, _ = model.process_candle(_candle(foreign_ticker, 150.0))
         assert rec.ticker == foreign_ticker
@@ -55,7 +61,7 @@ def test_hybrid_foreign_tickers_hold() -> None:
 
 
 def test_hybrid_weekend_trap_protection() -> None:
-    model = HybridTrioModel()
+    model = HybridTrioModel("T", "SBER", "OZON", donchian_window=5, pairs_window=5)
     # Zero volume on OZON, SBER, T
     for ticker in ["OZON", "SBER", "T"]:
         rec, _ = model.process_candle(_candle(ticker, 200.0, volume=0.0))
@@ -68,7 +74,14 @@ def test_hybrid_weekend_trap_protection() -> None:
 
 def test_hybrid_ozon_volume_breakout() -> None:
     window = 3
-    model = HybridTrioModel(donchian_window=window, volume_multiplier=1.2)
+    model = HybridTrioModel(
+        primary_ticker="T",
+        benchmark_ticker="SBER",
+        momentum_ticker="OZON",
+        donchian_window=window,
+        pairs_window=window,
+        volume_multiplier=1.2,
+    )
 
     # 1. Прогрев 3 свечи в диапазоне 3500..3550 со средним объёмом 1000
     for _ in range(window):
@@ -89,6 +102,9 @@ def test_hybrid_banking_synergy_double_confirmation() -> None:
     p_window = 4
     d_window = 3
     model = HybridTrioModel(
+        primary_ticker="T",
+        benchmark_ticker="SBER",
+        momentum_ticker="OZON",
         donchian_window=d_window,
         pairs_window=p_window,
         z_entry=1.5,
@@ -118,4 +134,26 @@ def test_hybrid_strategy_adapter_protocol() -> None:
     rec = adapter.evaluate(_candle("GAZP", 115.0))
     assert rec.ticker == "GAZP"
     assert rec.signal == Signal.HOLD
+
+
+def test_hybrid_custom_tickers_from_config() -> None:
+    # Проверка, что любые тикеры из переменных окружения работают корректно
+    adapter = HybridTrioStrategyAdapter(
+        primary_ticker="LKOH",
+        benchmark_ticker="TATN",
+        momentum_ticker="NVTK",
+        donchian_window=3,
+        pairs_window=3,
+    )
+    assert adapter.primary_ticker == "LKOH"
+    assert adapter.benchmark_ticker == "TATN"
+    assert adapter.momentum_ticker == "NVTK"
+
+    # Нецелевой тикер (SBER теперь не в корзине) -> HOLD
+    rec_sber = adapter.evaluate(_candle("SBER", 300.0))
+    assert rec_sber.signal == Signal.HOLD
+
+    # Целевой тикер NVTK (моментум) -> обрабатывается
+    rec_nvtk = adapter.evaluate(_candle("NVTK", 1500.0))
+    assert rec_nvtk.ticker == "NVTK"
 

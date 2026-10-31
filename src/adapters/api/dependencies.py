@@ -24,22 +24,10 @@ def get_strategy() -> StrategyPort:
     cfg = get_settings()
     stype = cfg.strategy_type.lower()
     if stype == "hybrid":
-        return HybridTrioStrategyAdapter(
-            donchian_window=cfg.strategy_window,
-            pairs_window=cfg.pairs_window,
-            z_entry=cfg.pairs_z_entry,
-            z_exit=cfg.pairs_z_exit,
-            volume_multiplier=cfg.hybrid_volume_multiplier,
-        )
+        return HybridTrioStrategyAdapter(settings=cfg)
     if stype == "pairs":
-        return PairsTradingStrategyAdapter(
-            primary_ticker=cfg.pairs_primary_ticker,
-            benchmark_ticker=cfg.pairs_benchmark_ticker,
-            window=cfg.pairs_window,
-            z_entry=cfg.pairs_z_entry,
-            z_exit=cfg.pairs_z_exit,
-        )
-    return DonchianStrategyAdapter(window=cfg.strategy_window)
+        return PairsTradingStrategyAdapter(settings=cfg)
+    return DonchianStrategyAdapter(settings=cfg)
 
 
 @lru_cache

@@ -32,9 +32,9 @@ class PairsTradingModel:
 
     def __init__(
         self,
-        primary_ticker: str = "T",
-        benchmark_ticker: str = "SBER",
-        window: int = 30,
+        primary_ticker: str,
+        benchmark_ticker: str,
+        window: int,
         z_entry: float = 1.8,
         z_exit: float = 0.5,
         min_std_ratio: float = 0.0005,

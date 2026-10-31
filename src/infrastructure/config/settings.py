@@ -1,5 +1,10 @@
+from pathlib import Path
+
 from pydantic import AnyHttpUrl, EmailStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -10,7 +15,7 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(str(ENV_FILE_PATH), ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -27,7 +32,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # --- Параметры торговой стратегии ---
-    strategy_type: str = "hybrid"  # "hybrid" (SBER + T + OZON), "pairs" или "donchian"
+    strategy_type: str = "hybrid"  # "hybrid" (гибрид), "pairs" (пары) или "donchian" (Дончян)
     strategy_window: int = 20
 
     # Настройки парного трейдинга (SBER + T)
@@ -37,7 +42,14 @@ class Settings(BaseSettings):
     pairs_z_entry: float = 1.8
     pairs_z_exit: float = 0.5
 
-    # Настройки гибридного ансамбля (SBER + T + OZON)
+    # Настройки гибридного ансамбля (полностью управляются из .env)
+    hybrid_primary_ticker: str = "T"
+    hybrid_benchmark_ticker: str = "SBER"
+    hybrid_momentum_ticker: str = "OZON"
+    hybrid_donchian_window: int = 20
+    hybrid_pairs_window: int = 30
+    hybrid_z_entry: float = 1.8
+    hybrid_z_exit: float = 0.5
     hybrid_volume_multiplier: float = 1.25
 
     # --- Подключение к защищенной Kafka платформы ---

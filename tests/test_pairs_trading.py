@@ -13,23 +13,23 @@ from src.infrastructure.strategy.pairs_trading import PairsTradingStrategyAdapte
 def test_pairs_trading_model_invariants() -> None:
     # Empty primary ticker
     with pytest.raises(InvalidPairConfigError):
-        PairsTradingModel(primary_ticker="", benchmark_ticker="SBER")
+        PairsTradingModel(primary_ticker="", benchmark_ticker="SBER", window=5)
 
     # Identical tickers
     with pytest.raises(InvalidPairConfigError):
-        PairsTradingModel(primary_ticker="SBER", benchmark_ticker="sber")
+        PairsTradingModel(primary_ticker="SBER", benchmark_ticker="sber", window=5)
 
     # Window < 3
     with pytest.raises(InvalidPairConfigError):
-        PairsTradingModel(window=2)
+        PairsTradingModel(primary_ticker="T", benchmark_ticker="SBER", window=2)
 
     # z_entry <= 0
     with pytest.raises(InvalidPairConfigError):
-        PairsTradingModel(z_entry=-1.0)
+        PairsTradingModel(primary_ticker="T", benchmark_ticker="SBER", window=5, z_entry=-1.0)
 
     # z_exit >= z_entry
     with pytest.raises(InvalidPairConfigError):
-        PairsTradingModel(z_entry=1.5, z_exit=1.5)
+        PairsTradingModel(primary_ticker="T", benchmark_ticker="SBER", window=5, z_entry=1.5, z_exit=1.5)
 
 
 def _make_candle(
