@@ -69,6 +69,31 @@ class DonchianChannel:
 
         close_val = candle.close.value
 
+        # Защита от "стены выходных" и пустых свечей симулятора (volume <= 0 или high == low)
+        if candle.volume <= 0.0 or candle.high.value == candle.low.value:
+            upper = max(highs) if highs else candle.high.value
+            lower = min(lows) if lows else candle.low.value
+            bands = DonchianBands(upper=max(upper, lower), lower=min(upper, lower))
+            now = datetime.now(tz=timezone.utc)
+            recommendation = TradeRecommendation(
+                ticker=candle.ticker,
+                timestamp=now,
+                signal=Signal.HOLD,
+                close=candle.close,
+                bands=bands,
+                confidence=Confidence(0.0),
+            )
+            event = RecommendationCreatedEvent(
+                ticker=candle.ticker,
+                timestamp=now,
+                signal=Signal.HOLD,
+                close=close_val,
+                upper_band=bands.upper,
+                lower_band=bands.lower,
+                confidence=0.0,
+            )
+            return recommendation, event
+
         if len(highs) < self._window:
             # Окно еще не заполнено — сигнал HOLD
             upper = max(highs) if highs else candle.high.value

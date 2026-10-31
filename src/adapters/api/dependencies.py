@@ -10,6 +10,8 @@ from src.infrastructure.config.settings import Settings, settings
 from src.infrastructure.kafka.client import KafkaConnectionManager
 from src.infrastructure.kafka.producer import KafkaPublisherAdapter
 from src.infrastructure.strategy.donchian import DonchianStrategyAdapter
+from src.infrastructure.strategy.hybrid_trio import HybridTrioStrategyAdapter
+from src.infrastructure.strategy.pairs_trading import PairsTradingStrategyAdapter
 
 
 @lru_cache
@@ -20,6 +22,23 @@ def get_settings() -> Settings:
 @lru_cache
 def get_strategy() -> StrategyPort:
     cfg = get_settings()
+    stype = cfg.strategy_type.lower()
+    if stype == "hybrid":
+        return HybridTrioStrategyAdapter(
+            donchian_window=cfg.strategy_window,
+            pairs_window=cfg.pairs_window,
+            z_entry=cfg.pairs_z_entry,
+            z_exit=cfg.pairs_z_exit,
+            volume_multiplier=cfg.hybrid_volume_multiplier,
+        )
+    if stype == "pairs":
+        return PairsTradingStrategyAdapter(
+            primary_ticker=cfg.pairs_primary_ticker,
+            benchmark_ticker=cfg.pairs_benchmark_ticker,
+            window=cfg.pairs_window,
+            z_entry=cfg.pairs_z_entry,
+            z_exit=cfg.pairs_z_exit,
+        )
     return DonchianStrategyAdapter(window=cfg.strategy_window)
 
 

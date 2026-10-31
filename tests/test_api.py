@@ -11,19 +11,19 @@ def client() -> TestClient:
 
 def test_process_candle_api_endpoint(client: TestClient) -> None:
     payload = {
-        "ticker": "GAZP",
+        "ticker": "T",
         "timestamp": "2026-10-14T10:00:00Z",
-        "open": 105.0,
-        "high": 110.0,
-        "low": 104.0,
-        "close": 108.0,
+        "open": 270.0,
+        "high": 272.0,
+        "low": 269.0,
+        "close": 271.0,
         "volume": 250000.0,
-        "interval": "1d",
+        "interval": "1m",
     }
     response = client.post("/market/candles", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["ticker"] == "GAZP"
+    assert data["ticker"] == "T"
     assert data["signal"] in ["BUY", "SELL", "HOLD"]
 
 

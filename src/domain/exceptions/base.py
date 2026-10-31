@@ -23,3 +23,7 @@ class InvalidWindowSizeError(DomainError):
 class InvalidConfidenceError(DomainError):
     """Сила сигнала (confidence) должна находиться в диапазоне [0.0, 1.0]."""
 
+
+class InvalidPairConfigError(DomainError):
+    """Некорректная конфигурация парной стратегии (одинаковые тикеры или окно < 2)."""
+

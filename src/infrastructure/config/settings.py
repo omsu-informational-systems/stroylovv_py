@@ -27,7 +27,18 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # --- Параметры торговой стратегии ---
+    strategy_type: str = "hybrid"  # "hybrid" (SBER + T + OZON), "pairs" или "donchian"
     strategy_window: int = 20
+
+    # Настройки парного трейдинга (SBER + T)
+    pairs_primary_ticker: str = "T"
+    pairs_benchmark_ticker: str = "SBER"
+    pairs_window: int = 30
+    pairs_z_entry: float = 1.8
+    pairs_z_exit: float = 0.5
+
+    # Настройки гибридного ансамбля (SBER + T + OZON)
+    hybrid_volume_multiplier: float = 1.25
 
     # --- Подключение к защищенной Kafka платформы ---
     kafka_bootstrap_servers: str = "omsu.7bits.it:9094"
