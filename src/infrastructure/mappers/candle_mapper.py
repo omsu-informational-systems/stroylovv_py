@@ -9,6 +9,10 @@ class CandleMapper:
     """Маппер для входящих сообщений свечей из Kafka."""
 
     @staticmethod
+    def extract_event_type(data: dict[str, Any]) -> str:
+        return str(data.get("eventType", "market.candle.closed"))
+
+    @staticmethod
     def parse_kafka_message(payload_bytes: bytes) -> ProcessCandleCommand:
         data = json.loads(payload_bytes.decode("utf-8"))
         return CandleMapper.from_dict(data)

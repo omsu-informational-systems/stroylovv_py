@@ -25,7 +25,13 @@ class HeartbeatPublisherPort(Protocol):
 class RegistrationPublisherPort(Protocol):
     """Порт отправки запроса на регистрацию сервиса."""
 
-    async def publish_registration(self, service_name: str) -> None:
-        """Опубликовать запрос на регистрацию микросервиса."""
+    async def publish_registration(
+        self,
+        service_name: str,
+        account_name: str = "",
+        group_id: str = "",
+        strategy_name: str = "",
+    ) -> None:
+        """Опубликовать запрос на регистрацию микросервиса со стабильными идентификаторами."""
         ...
 

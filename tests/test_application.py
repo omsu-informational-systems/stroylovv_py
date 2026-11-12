@@ -78,3 +78,113 @@ async def test_send_heartbeat_use_case() -> None:
     use_case = SendHeartbeatUseCase(publisher=FakePublisher())  # type: ignore
     await use_case.execute(SendHeartbeatCommand(service_name="test-service"))
     assert published_events == ["test-service"]
+
+
+@pytest.mark.asyncio
+async def test_register_service_use_case() -> None:
+    from src.application.commands.register_service import RegisterServiceCommand
+    from src.application.use_cases.register_service import RegisterServiceUseCase
+
+    calls = []
+
+    class FakeRegPublisher:
+        async def publish_registration(
+            self,
+            service_name: str,
+            account_name: str = "",
+            group_id: str = "",
+            strategy_name: str = "",
+        ) -> None:
+            calls.append((service_name, account_name, group_id, strategy_name))
+
+    uc = RegisterServiceUseCase(publisher=FakeRegPublisher())  # type: ignore
+    await uc.execute(
+        RegisterServiceCommand(
+            service_name="breakout-strategy",
+            account_name="Виталий Стройлов",
+            group_id="МОБ-301",
+            strategy_name="hybrid-breakout",
+        )
+    )
+    assert len(calls) == 1
+    assert calls[0] == ("breakout-strategy", "Виталий Стройлов", "МОБ-301", "hybrid-breakout")
+
+
+@pytest.mark.asyncio
+async def test_process_registration_result_use_case() -> None:
+    from src.application.commands.process_registration_result import (
+        ProcessRegistrationResultCommand,
+    )
+    from src.application.use_cases.process_registration_result import (
+        ProcessRegistrationResultUseCase,
+    )
+    from src.domain.entities.registration import ServiceRegistration
+
+    reg = ServiceRegistration(
+        service_name="breakout-strategy",
+        account_name="Виталий Стройлов",
+        group_id="МОБ-301",
+        strategy_name="hybrid-breakout",
+    )
+    uc = ProcessRegistrationResultUseCase(registration=reg)
+
+    # 1. Отказ в регистрации
+    await uc.execute(
+        ProcessRegistrationResultCommand(
+            service_name="breakout-strategy",
+            success=False,
+            reason="Неверный ключ secretKey",
+        )
+    )
+    assert reg.is_active is False
+    assert reg.is_rejected is True
+    assert reg.rejection_reason == "Неверный ключ secretKey"
+    assert reg.can_publish_recommendations is False
+
+    # 2. Успешная регистрация
+    await uc.execute(
+        ProcessRegistrationResultCommand(
+            service_name="breakout-strategy",
+            success=True,
+            reason="OK",
+        )
+    )
+    assert reg.is_active is True
+    assert reg.is_rejected is False
+    assert reg.can_publish_recommendations is True
+
+
+@pytest.mark.asyncio
+async def test_process_candle_blocks_on_rejection() -> None:
+    from src.domain.entities.recommendation import TradeRecommendation
+    from src.domain.entities.registration import ServiceRegistration
+
+    published = []
+
+    class FakeRecPublisher:
+        async def publish_recommendation(self, rec: TradeRecommendation) -> None:
+            published.append(rec)
+
+    reg = ServiceRegistration(service_name="breakout-strategy")
+    reg.reject("Платформа отклонила доступ")
+
+    strategy = DonchianStrategyAdapter(window=2)
+    use_case = ProcessCandleUseCase(
+        strategy=strategy,
+        publisher=FakeRecPublisher(),  # type: ignore
+        registration=reg,
+    )
+
+    cmd = ProcessCandleCommand(
+        ticker="SBER",
+        timestamp=datetime.now(timezone.utc),
+        open=250.0,
+        high=255.0,
+        low=245.0,
+        close=250.0,
+        volume=1000.0,
+    )
+    res = await use_case.execute(cmd)
+    assert res.ticker == "SBER"
+    # Рекомендация не должна быть отправлена в брокер, т.к. регистрация отклонена
+    assert len(published) == 0

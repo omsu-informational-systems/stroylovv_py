@@ -6,7 +6,9 @@ from fastapi import FastAPI
 
 from src.adapters.api.dependencies import (
     get_kafka_manager,
+    get_process_registration_result_use_case,
     get_publisher,
+    get_service_registration,
     get_settings,
     get_strategy,
 )
@@ -34,21 +36,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     kafka_manager = get_kafka_manager()
     publisher = get_publisher()
     strategy = get_strategy()
+    registration = get_service_registration()
+    process_reg_result_use_case = get_process_registration_result_use_case()
 
-    # 1. Подключение к защищенной Kafka
+    # 1. Подключение к защищенной Kafka (Producer)
     try:
         await kafka_manager.start_producer()
     except Exception as exc:
-        logger.warning("Не удалось инициализировать Kafka Producer: %s", exc)
+        logger.warning(
+            "Не удалось инициализировать Kafka Producer (временная недоступность): %s",
+            exc,
+        )
 
-    # 2. Отправка запроса на регистрацию сервиса
+    # 2. Отправка запроса на регистрацию сервиса со стабильными идентификаторами
     register_use_case = RegisterServiceUseCase(publisher=publisher)
     try:
         await register_use_case.execute(
-            RegisterServiceCommand(service_name=settings.app_name)
+            RegisterServiceCommand(
+                service_name=settings.app_name,
+                account_name=settings.account_name,
+                group_id=settings.group_id,
+                strategy_name=settings.strategy_name,
+            )
         )
     except Exception as exc:
-        logger.warning("Не удалось отправить регистрацию: %s", exc)
+        logger.warning("Не удалось отправить запрос регистрации: %s", exc)
 
     # 3. Запуск воркера периодического heartbeat
     heartbeat_use_case = SendHeartbeatUseCase(publisher=publisher)
@@ -59,14 +71,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     heartbeat_worker.start()
 
-    # 4. Запуск Kafka Consumer свечей
+    # 4. Запуск Kafka Consumer (подписка на candle_topic и topic_registration_result)
     process_candle_use_case = ProcessCandleUseCase(
         strategy=strategy,
         publisher=publisher,
+        registration=registration,
     )
     consumer_service = KafkaConsumerService(
         connection_manager=kafka_manager,
         process_candle_use_case=process_candle_use_case,
+        process_registration_result_use_case=process_reg_result_use_case,
         settings=settings,
     )
     try:
@@ -103,6 +117,5 @@ if __name__ == "__main__":
         "src.main:app",
         host=settings.app_host,
         port=settings.app_port,
-        log_level=settings.log_level.lower(),
-        reload=True,
+        reload=False,
     )

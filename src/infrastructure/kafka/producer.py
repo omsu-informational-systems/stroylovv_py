@@ -42,6 +42,7 @@ class KafkaPublisherAdapter(
             recommendation=recommendation,
             service_name=self._settings.app_name,
             secret_key=self._settings.secret_key,
+            schema_version=self._settings.schema_version,
         )
         await self._send(
             topic=self._settings.topic_recommendation_created,
@@ -49,10 +50,12 @@ class KafkaPublisherAdapter(
             value=payload_json.encode("utf-8"),
         )
         logger.info(
-            "Рекомендация опубликована в %s: ticker=%s signal=%s",
+            "Рекомендация опубликована в %s: ticker=%s, signal=%s, close=%.2f, confidence=%.4f",
             self._settings.topic_recommendation_created,
             recommendation.ticker,
             recommendation.signal.value,
+            recommendation.close_value,
+            recommendation.confidence_value,
         )
 
     async def publish_heartbeat(self, service_name: str) -> None:
@@ -60,6 +63,7 @@ class KafkaPublisherAdapter(
         payload_json = EventMapper.to_heartbeat_json(
             service_name=service_name,
             secret_key=self._settings.secret_key,
+            schema_version=self._settings.schema_version,
         )
         await self._send(
             topic=self._settings.topic_heartbeat,
@@ -68,18 +72,39 @@ class KafkaPublisherAdapter(
         )
         logger.debug("Heartbeat отправлен в тему %s", self._settings.topic_heartbeat)
 
-    async def publish_registration(self, service_name: str) -> None:
+    async def publish_registration(
+        self,
+        service_name: str,
+        account_name: str = "",
+        group_id: str = "",
+        strategy_name: str = "",
+    ) -> None:
         """Публикация запроса регистрации в тему account.registration.request."""
+        acc_name = account_name or self._settings.account_name
+        grp_id = group_id or self._settings.group_id
+        strat_name = strategy_name or self._settings.strategy_name
+
         payload_json = EventMapper.to_registration_json(
             service_name=service_name,
             secret_key=self._settings.secret_key,
+            account_name=acc_name,
+            group_id=grp_id,
+            strategy_name=strat_name,
+            schema_version=self._settings.schema_version,
         )
         await self._send(
             topic=self._settings.topic_registration_request,
             key=service_name.encode("utf-8"),
             value=payload_json.encode("utf-8"),
         )
-        logger.info("Запрос регистрации отправлен в %s", self._settings.topic_registration_request)
+        logger.info(
+            "Запрос регистрации отправлен в %s: serviceName=%s, accountName=%s, groupId=%s, strategyName=%s",
+            self._settings.topic_registration_request,
+            service_name,
+            acc_name,
+            grp_id,
+            strat_name,
+        )
 
     async def _send(self, topic: str, key: bytes, value: bytes) -> None:
         producer = self._manager.producer
@@ -92,4 +117,3 @@ class KafkaPublisherAdapter(
             return
 
         await producer.send_and_wait(topic=topic, key=key, value=value)
-

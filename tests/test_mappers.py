@@ -60,11 +60,49 @@ def test_recommendation_mapper() -> None:
 def test_event_mapper() -> None:
     heartbeat_json = EventMapper.to_heartbeat_json("my-svc", "student-key-05")
     parsed_hb = json.loads(heartbeat_json)
+    assert parsed_hb["schemaVersion"] == "1.0.0"
     assert parsed_hb["eventType"] == "account.service.heartbeat"
     assert parsed_hb["secretKey"] == "student-key-05"
 
-    reg_json = EventMapper.to_registration_json("my-svc", "student-key-05")
+    reg_json = EventMapper.to_registration_json(
+        service_name="breakout-strategy",
+        secret_key="student-key-05",
+        account_name="Виталий Стройлов",
+        group_id="МОБ-301",
+        strategy_name="hybrid-breakout",
+    )
     parsed_reg = json.loads(reg_json)
+    assert parsed_reg["schemaVersion"] == "1.0.0"
     assert parsed_reg["eventType"] == "account.registration.request"
     assert parsed_reg["secretKey"] == "student-key-05"
+    assert parsed_reg["accountName"] == "Виталий Стройлов"
+    assert parsed_reg["groupId"] == "МОБ-301"
+    assert parsed_reg["serviceName"] == "breakout-strategy"
+    assert parsed_reg["strategyName"] == "hybrid-breakout"
+
+    # Тест парсинга успешного ответа регистрации
+    approved_bytes = json.dumps({
+        "schemaVersion": "1.0.0",
+        "eventType": "account.registration.result",
+        "serviceName": "breakout-strategy",
+        "success": True,
+        "reason": "OK",
+    }).encode("utf-8")
+    svc, ok, reason, _ = EventMapper.parse_registration_result(approved_bytes)
+    assert svc == "breakout-strategy"
+    assert ok is True
+    assert reason == "OK"
+
+    # Тест парсинга отклоненного ответа
+    rejected_bytes = json.dumps({
+        "schemaVersion": "1.0.0",
+        "eventType": "account.registration.result",
+        "serviceName": "breakout-strategy",
+        "success": False,
+        "reason": "Неверный secretKey",
+    }).encode("utf-8")
+    svc, ok, reason, _ = EventMapper.parse_registration_result(rejected_bytes)
+    assert svc == "breakout-strategy"
+    assert ok is False
+    assert reason == "Неверный secretKey"
 

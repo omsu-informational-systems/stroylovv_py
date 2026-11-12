@@ -22,9 +22,13 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
     )
 
-    # --- Метаданные микросервиса ---
+    # --- Метаданные микросервиса и студента ---
     app_name: str = "breakout-strategy"
     app_version: str = "1.0.0"
+    account_name: str = "Виталий Стройлов"
+    group_id: str = "МОБ-301"
+    strategy_name: str = "hybrid-breakout"
+    schema_version: str = "1.0.0"
 
     # --- HTTP сервер ---
     app_host: str = "0.0.0.0"
@@ -80,6 +84,16 @@ class Settings(BaseSettings):
     contact_name: str = "StroylovV"
     contact_email: EmailStr = "spartan9611@gmail.com"
     contact_url: AnyHttpUrl = "https://github.com/StroylovV"
+
+    def __repr__(self) -> str:
+        return (
+            f"Settings(app_name={self.app_name!r}, "
+            f"account_name={self.account_name!r}, "
+            f"group_id={self.group_id!r}, "
+            f"kafka_bootstrap_servers={self.kafka_bootstrap_servers!r}, "
+            f"kafka_group_id={self.kafka_group_id!r}, "
+            f"candle_topic={self.candle_topic!r})"
+        )
 
 
 settings = Settings()
