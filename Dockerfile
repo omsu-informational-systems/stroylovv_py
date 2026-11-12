@@ -15,12 +15,10 @@ ENV POETRY_VERSION=1.8.3 \
 
 ENV PATH="$POETRY_HOME/bin:$PATH"
 
-# Устанавливаем только curl для загрузки Poetry (без gcc — не нужен для чистого Python)
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && curl -sSL https://install.python-poetry.org | python3 - \
-    && rm -rf /var/lib/apt/lists/*
+# Устанавливаем Poetry напрямую через pip без тяжелых системных пакетов apt
+RUN pip install --no-cache-dir poetry
 
-# Копируем только манифест зависимостей — слой кешируется при неизменном pyproject.toml
+# Копируем манифест зависимостей
 COPY pyproject.toml poetry.lock* ./
 
 # Устанавливаем только production-зависимости, без корня пакета
