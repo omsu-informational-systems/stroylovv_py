@@ -1,6 +1,6 @@
 # Проектный документ: Сервис торговой стратегии (Breakout Strategy)
 
-* **Автор:** Виталий Стройлов (группа МОБ-301)
+* **Автор:** Виталий Стройлов (учебная группа МИБ-401)
 * **Репозиторий:** [omsu-informational-systems/stroylovv_py](https://github.com/omsu-informational-systems/stroylovv_py)
 * **План задач и трекер:** [docs/project-tasks.md](project-tasks.md) | [GitHub Issues](https://github.com/omsu-informational-systems/stroylovv_py/issues)
 * **Архитектурные схемы:** [Контекстная схема](context-diagram.md) | [Компонентная схема](component-diagram.md)

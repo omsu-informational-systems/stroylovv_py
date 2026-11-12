@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TB
     subgraph Users ["Пользователи"]
-        Student["Студент / Разработчик<br/>(Виталий Стройлов)"]
+        Student["Студент / Разработчик<br/>(Виталий Стройлов, группа МИБ-401)"]
         Teacher["Преподаватель / Администратор<br/>(Куратор курса)"]
     end
 
@@ -61,3 +61,4 @@ flowchart TB
 | **10-11**| `breakout-strategy`| Платформа | Kafka (`account.service.heartbeat`) | Периодический сигнал жизнедеятельности сервиса (каждые 10 секунд). |
 | **12-13**| `breakout-strategy`| Платформа | Kafka (`strategy.recommendation.created`) | Отправка торговых рекомендаций (`BUY`, `SELL`, `HOLD`) с указанием расчетных границ канала и метрики `confidence`. |
 | **14**| Orchestrator | `breakout-strategy` | HTTP (`GET /health`) | Проверка состояния сервиса и доступности брокера Kafka. |
+

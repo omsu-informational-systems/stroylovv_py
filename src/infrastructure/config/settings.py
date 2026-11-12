@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     app_name: str = "breakout-strategy"
     app_version: str = "1.0.0"
     account_name: str = "Виталий Стройлов"
-    group_id: str = "МОБ-301"
+    group_id: str = "МИБ-401"
     strategy_name: str = "hybrid-breakout"
     schema_version: str = "1.0.0"
 

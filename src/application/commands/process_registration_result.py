@@ -10,3 +10,4 @@ class ProcessRegistrationResultCommand:
     success: bool
     reason: str = ""
     timestamp: datetime | None = None
+

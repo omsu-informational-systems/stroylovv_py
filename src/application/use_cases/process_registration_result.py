@@ -41,3 +41,4 @@ class ProcessRegistrationResultUseCase:
                 command.service_name,
                 self._registration.rejection_reason,
             )
+

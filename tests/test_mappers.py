@@ -68,7 +68,7 @@ def test_event_mapper() -> None:
         service_name="breakout-strategy",
         secret_key="student-key-05",
         account_name="Виталий Стройлов",
-        group_id="МОБ-301",
+        group_id="МИБ-401",
         strategy_name="hybrid-breakout",
     )
     parsed_reg = json.loads(reg_json)
@@ -76,7 +76,7 @@ def test_event_mapper() -> None:
     assert parsed_reg["eventType"] == "account.registration.request"
     assert parsed_reg["secretKey"] == "student-key-05"
     assert parsed_reg["accountName"] == "Виталий Стройлов"
-    assert parsed_reg["groupId"] == "МОБ-301"
+    assert parsed_reg["groupId"] == "МИБ-401"
     assert parsed_reg["serviceName"] == "breakout-strategy"
     assert parsed_reg["strategyName"] == "hybrid-breakout"
 
