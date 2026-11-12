@@ -112,23 +112,37 @@ class KafkaConsumerService(EventConsumerPort):
                     try:
                         # 1. Обработка ответа на регистрацию (account.registration.result)
                         if message.topic == self._settings.topic_registration_result:
-                            svc_name, success, reason, ts = EventMapper.parse_registration_result(message.value)
-                            logger.info(
-                                "Получен результат регистрации от платформы: serviceName=%s, success=%s, reason='%s' (partition=%s, offset=%s)",
-                                svc_name,
-                                success,
-                                reason,
-                                message.partition,
-                                message.offset,
+                            svc_name, sec_key, success, reason, ts = EventMapper.parse_registration_result(message.value)
+                            is_our_service = (
+                                (svc_name and svc_name == self._settings.app_name)
+                                or (sec_key and sec_key == self._settings.secret_key)
                             )
-                            if self._reg_use_case:
-                                await self._reg_use_case.execute(
-                                    ProcessRegistrationResultCommand(
-                                        service_name=svc_name,
-                                        success=success,
-                                        reason=reason,
-                                        timestamp=ts,
+                            if is_our_service:
+                                logger.info(
+                                    "Получен результат регистрации нашего сервиса: serviceName=%s, secretKey=%s, success=%s, reason='%s' (partition=%s, offset=%s)",
+                                    svc_name,
+                                    sec_key,
+                                    success,
+                                    reason,
+                                    message.partition,
+                                    message.offset,
+                                )
+                                if self._reg_use_case:
+                                    await self._reg_use_case.execute(
+                                        ProcessRegistrationResultCommand(
+                                            service_name=svc_name,
+                                            secret_key=sec_key,
+                                            success=success,
+                                            reason=reason,
+                                            timestamp=ts,
+                                        )
                                     )
+                            else:
+                                logger.debug(
+                                    "Пропуск результата регистрации другого сервиса: serviceName=%s, secretKey=%s (offset=%s)",
+                                    svc_name,
+                                    sec_key,
+                                    message.offset,
                                 )
 
                         # 2. Обработка входящей свечи (market.candle.closed)

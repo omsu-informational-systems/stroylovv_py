@@ -18,17 +18,29 @@ class ProcessRegistrationResultUseCase:
     и записывает структурированный журнал ошибки.
     """
 
-    def __init__(self, registration: ServiceRegistration) -> None:
+    def __init__(
+        self,
+        registration: ServiceRegistration,
+        expected_secret_key: str = "",
+    ) -> None:
         self._registration = registration
+        self._expected_secret_key = expected_secret_key
 
     async def execute(self, command: ProcessRegistrationResultCommand) -> None:
+        # Проверяем, адресовано ли событие нашему сервису
+        if command.service_name and command.service_name != self._registration.service_name:
+            return
+        if command.secret_key and self._expected_secret_key:
+            if command.secret_key != self._expected_secret_key:
+                return
+
         ts = command.timestamp or datetime.now(timezone.utc)
         if command.success:
             self._registration.activate(timestamp=ts)
             logger.info(
                 "[РЕГИСТРАЦИЯ ПОДТВЕРЖДЕНА] Сервис '%s' успешно зарегистрирован на платформе. "
                 "Студент: '%s', Группа: '%s', Стратегия: '%s'. Публикация рекомендаций РАЗРЕШЕНА.",
-                command.service_name,
+                self._registration.service_name,
                 self._registration.account_name,
                 self._registration.group_id,
                 self._registration.strategy_name,
@@ -38,7 +50,7 @@ class ProcessRegistrationResultUseCase:
             logger.error(
                 "[ОТКАЗ В РЕГИСТРАЦИИ] Платформа отклонила регистрацию сервиса '%s'! "
                 "Причина отказа: %s. Публикация торговых рекомендаций ЗАБЛОКИРОВАНА.",
-                command.service_name,
+                self._registration.service_name,
                 self._registration.rejection_reason,
             )
 

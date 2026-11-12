@@ -80,29 +80,36 @@ def test_event_mapper() -> None:
     assert parsed_reg["serviceName"] == "breakout-strategy"
     assert parsed_reg["strategyName"] == "hybrid-breakout"
 
-    # Тест парсинга успешного ответа регистрации
+    # Тест парсинга успешного ответа регистрации (платформенный формат с вложенным payload)
     approved_bytes = json.dumps({
-        "schemaVersion": "1.0.0",
+        "schemaVersion": "1.0",
         "eventType": "account.registration.result",
-        "serviceName": "breakout-strategy",
-        "success": True,
-        "reason": "OK",
+        "occurredAt": "2026-10-28T13:43:22.960822Z",
+        "payload": {
+            "serviceName": "breakout-strategy",
+            "secretKey": "student-key-05",
+            "status": "REGISTERED",
+            "reason": "OK",
+        },
     }).encode("utf-8")
-    svc, ok, reason, _ = EventMapper.parse_registration_result(approved_bytes)
+    svc, sec_key, ok, reason, _ = EventMapper.parse_registration_result(approved_bytes)
     assert svc == "breakout-strategy"
+    assert sec_key == "student-key-05"
     assert ok is True
     assert reason == "OK"
 
-    # Тест парсинга отклоненного ответа
+    # Тест парсинга отклоненного ответа (плоский формат)
     rejected_bytes = json.dumps({
         "schemaVersion": "1.0.0",
         "eventType": "account.registration.result",
         "serviceName": "breakout-strategy",
+        "secretKey": "student-key-05",
         "success": False,
         "reason": "Неверный secretKey",
     }).encode("utf-8")
-    svc, ok, reason, _ = EventMapper.parse_registration_result(rejected_bytes)
+    svc, sec_key, ok, reason, _ = EventMapper.parse_registration_result(rejected_bytes)
     assert svc == "breakout-strategy"
+    assert sec_key == "student-key-05"
     assert ok is False
     assert reason == "Неверный secretKey"
 

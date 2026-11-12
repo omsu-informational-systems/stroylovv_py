@@ -9,5 +9,6 @@ class ProcessRegistrationResultCommand:
     service_name: str
     success: bool
     reason: str = ""
+    secret_key: str = ""
     timestamp: datetime | None = None
 

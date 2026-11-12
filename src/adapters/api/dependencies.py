@@ -64,29 +64,36 @@ def get_process_candle_use_case(
     publisher: RecommendationPublisherPort = Depends(get_publisher),
     registration: ServiceRegistration = Depends(get_service_registration),
 ) -> ProcessCandleUseCase:
+    reg = registration if isinstance(registration, ServiceRegistration) else get_service_registration()
+    strat = strategy if isinstance(strategy, StrategyPort) else get_strategy()
+    pub = publisher if isinstance(publisher, RecommendationPublisherPort) else get_publisher()
     return ProcessCandleUseCase(
-        strategy=strategy,
-        publisher=publisher,
-        registration=registration,
+        strategy=strat,
+        publisher=pub,
+        registration=reg,
     )
 
 
 def get_process_registration_result_use_case(
     registration: ServiceRegistration = Depends(get_service_registration),
 ) -> ProcessRegistrationResultUseCase:
-    return ProcessRegistrationResultUseCase(registration=registration)
+    reg = registration if isinstance(registration, ServiceRegistration) else get_service_registration()
+    cfg = get_settings()
+    return ProcessRegistrationResultUseCase(registration=reg, expected_secret_key=cfg.secret_key)
 
 
 def get_register_service_use_case(
     publisher: KafkaPublisherAdapter = Depends(get_publisher),
 ) -> RegisterServiceUseCase:
-    return RegisterServiceUseCase(publisher=publisher)
+    pub = publisher if isinstance(publisher, KafkaPublisherAdapter) else get_publisher()
+    return RegisterServiceUseCase(publisher=pub)
 
 
 def get_health_use_case(
     cfg: Settings = Depends(get_settings),
 ) -> HealthCheckUseCase:
+    conf = cfg if isinstance(cfg, Settings) else get_settings()
     return HealthCheckUseCase(
-        service_name=cfg.app_name,
-        service_version=cfg.app_version,
+        service_name=conf.app_name,
+        service_version=conf.app_version,
     )

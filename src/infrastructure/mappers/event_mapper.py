@@ -43,31 +43,48 @@ class EventMapper:
         return json.dumps(payload, ensure_ascii=False)
 
     @staticmethod
-    def parse_registration_result(payload_bytes: bytes) -> tuple[str, bool, str, datetime]:
+    def parse_registration_result(payload_bytes: bytes) -> tuple[str, str, bool, str, datetime]:
         """
         Десериализация сообщения account.registration.result от платформы.
 
-        Возвращает: (service_name, success, reason, timestamp)
+        Поддерживает как обертку event/payload платформы, так и плоский JSON.
+        Возвращает: (service_name, secret_key, success, reason, timestamp)
         """
         data = json.loads(payload_bytes.decode("utf-8"))
-        service_name = str(data.get("serviceName", "")).strip()
+        inner = data.get("payload") if isinstance(data.get("payload"), dict) else data
 
-        raw_success = data.get("success")
+        service_name = str(inner.get("serviceName", data.get("serviceName", ""))).strip()
+        secret_key = str(inner.get("secretKey", data.get("secretKey", ""))).strip()
+
+        raw_success = inner.get("success", data.get("success"))
         if isinstance(raw_success, bool):
             success = raw_success
         else:
-            raw_status = str(data.get("status", "")).strip().upper()
-            success = raw_status in ("SUCCESS", "OK", "APPROVED", "CONFIRMED")
+            raw_status = str(inner.get("status", data.get("status", ""))).strip().upper()
+            success = raw_status in ("REGISTERED", "SUCCESS", "OK", "APPROVED", "CONFIRMED")
 
-        reason = str(data.get("reason", data.get("message", data.get("error", "")))).strip()
+        reason = str(
+            inner.get(
+                "reason",
+                inner.get("message", inner.get("error", data.get("reason", ""))),
+            )
+        ).strip()
 
-        raw_ts = data.get("timestamp")
+        raw_ts = data.get("occurredAt") or data.get("timestamp") or inner.get("timestamp")
         if isinstance(raw_ts, str):
             try:
-                ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                clean_ts = raw_ts.replace("Z", "+00:00")
+                if "." in clean_ts:
+                    prefix, rest = clean_ts.split(".", 1)
+                    if "+" in rest:
+                        frac, tz = rest.split("+", 1)
+                        clean_ts = f"{prefix}.{frac[:6]}+{tz}"
+                    else:
+                        clean_ts = f"{prefix}.{rest[:6]}"
+                ts = datetime.fromisoformat(clean_ts)
             except ValueError:
                 ts = datetime.now(timezone.utc)
         else:
             ts = datetime.now(timezone.utc)
 
-        return service_name, success, reason, ts
+        return service_name, secret_key, success, reason, ts
