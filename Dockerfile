@@ -18,12 +18,11 @@ ENV PATH="$POETRY_HOME/bin:$PATH"
 # Устанавливаем Poetry напрямую через pip без тяжёлых системных пакетов apt
 RUN pip install --no-cache-dir poetry
 
-# Копируем манифест зависимостей
-COPY pyproject.toml poetry.lock* ./
+# Копируем манифест зависимостей и lock-файл
+COPY pyproject.toml poetry.lock README.md ./
 
-# Обновляем lock при расхождении с pyproject.toml и ставим только production-зависимости
-RUN (poetry check --lock || poetry lock) \
-    && poetry install --only main --no-root --no-ansi
+# Устанавливаем только production-зависимости строго из poetry.lock (без повторного resolve)
+RUN poetry install --only main --no-root --no-ansi
 
 # ─────────────────────────────────────────────
 # Stage 2: runner — минимальный runtime-образ
