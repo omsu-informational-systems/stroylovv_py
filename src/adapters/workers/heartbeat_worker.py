@@ -1,24 +1,26 @@
 import asyncio
 import logging
 
-from src.application.commands.send_heartbeat import SendHeartbeatCommand
 from src.application.use_cases.send_heartbeat import SendHeartbeatUseCase
 
 logger = logging.getLogger(__name__)
 
 
 class HeartbeatWorker:
-    """Фоновый воркер периодической отправки heartbeat платформе."""
+    """
+    Фоновый воркер периодической отправки сигнала состояния (account.service.heartbeat).
+
+    Отправляет heartbeat примерно раз в 5 секунд после подтверждения регистрации
+    независимо от наличия активного запуска.
+    """
 
     def __init__(
         self,
         use_case: SendHeartbeatUseCase,
-        service_name: str,
-        interval_seconds: int = 10,
+        interval_seconds: int = 5,
     ) -> None:
         self._use_case = use_case
-        self._service_name = service_name
-        self._interval = interval_seconds
+        self._interval = max(1, interval_seconds)
         self._task: asyncio.Task[None] | None = None
         self._running: bool = False
 
@@ -31,7 +33,7 @@ class HeartbeatWorker:
 
     async def stop(self) -> None:
         self._running = False
-        if self._task:
+        if self._task is not None:
             self._task.cancel()
             try:
                 await self._task
@@ -41,15 +43,13 @@ class HeartbeatWorker:
         logger.info("Heartbeat worker остановлен.")
 
     async def _run_loop(self) -> None:
-        command = SendHeartbeatCommand(service_name=self._service_name)
         while self._running:
             try:
-                await self._use_case.execute(command)
+                await self._use_case.execute()
             except Exception as exc:
-                logger.debug("Ошибка в цикле heartbeat: %s", exc)
+                logger.warning("Ошибка в цикле heartbeat: %s", exc)
 
             try:
                 await asyncio.sleep(self._interval)
             except asyncio.CancelledError:
                 break
-

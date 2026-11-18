@@ -17,7 +17,7 @@ router = APIRouter(prefix="/market", tags=["Market"])
     response_model=RecommendationResponseSchema,
     status_code=status.HTTP_200_OK,
     summary="Обработка биржевой свечи",
-    description="Принимает дневную свечу, рассчитывает сигнал Дончяна и публикует рекомендацию.",
+    description="Принимает свечу, рассчитывает торговый сигнал и публикует рекомендацию.",
 )
 async def process_candle_endpoint(
     candle_in: CandleRequestSchema,
@@ -36,6 +36,11 @@ async def process_candle_endpoint(
 
     try:
         dto = await use_case.execute(command)
+        if dto is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Событие свечи уже было обработано",
+            )
         return RecommendationResponseSchema(
             ticker=dto.ticker,
             timestamp=dto.timestamp,
@@ -50,4 +55,3 @@ async def process_candle_endpoint(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
-

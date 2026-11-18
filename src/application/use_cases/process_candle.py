@@ -1,4 +1,5 @@
 import logging
+import time
 
 from src.application.commands.process_candle import ProcessCandleCommand
 from src.application.dtos.recommendation import TradeRecommendationDTO
@@ -14,13 +15,15 @@ logger = logging.getLogger(__name__)
 
 class ProcessCandleUseCase:
     """
-    Сценарий использования: обработка биржевой свечи.
+    Сценарий использования: обработка биржевой свечи (market.candle.closed).
 
-    Координирует создание доменной сущности Candle,
-    вызов доменной стратегии StrategyPort
-    и публикацию результата через RecommendationPublisherPort.
-
-    При отказе платформы в регистрации сервиса публикация рекомендаций блокируется.
+    Координирует:
+    1. Проверку дедупликации по eventId (идемпотентность в рамках процесса).
+    2. Создание доменной сущности Candle с десятичной валидацией Price.
+    3. Оценку свечи доменной стратегией StrategyPort.
+    4. Привязку контекста события (correlationId, causationId/sourceEventId, runId, sequenceNumber).
+    5. Публикацию рекомендации через RecommendationPublisherPort (если регистрация не отклонена).
+    6. Обновление счётчиков телеметрии для heartbeat.
     """
 
     def __init__(
@@ -28,12 +31,29 @@ class ProcessCandleUseCase:
         strategy: StrategyPort,
         publisher: RecommendationPublisherPort | None = None,
         registration: ServiceRegistration | None = None,
+        default_order_quantity: int = 1,
     ) -> None:
         self._strategy = strategy
         self._publisher = publisher
         self._registration = registration
+        self._default_order_quantity = max(1, default_order_quantity)
 
-    async def execute(self, command: ProcessCandleCommand) -> TradeRecommendationDTO:
+    async def execute(self, command: ProcessCandleCommand) -> TradeRecommendationDTO | None:
+        if (
+            self._registration is not None
+            and command.event_id
+            and self._registration.is_duplicate_event(command.event_id)
+        ):
+            logger.debug(
+                "Пропуск повторно полученного события свечи eventId=%s (ticker=%s, seq=%s)",
+                command.event_id,
+                command.ticker,
+                command.sequence_number,
+            )
+            return None
+
+        started = time.perf_counter()
+
         interval = (
             CandleInterval(command.interval)
             if command.interval in CandleInterval._value2member_map_
@@ -52,8 +72,18 @@ class ProcessCandleUseCase:
         )
 
         recommendation = self._strategy.evaluate(candle)
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
 
-        # Проверка статуса регистрации сервиса на платформе
+        recommendation.enrich_context(
+            source_event_id=command.event_id,
+            correlation_id=command.correlation_id,
+            run_id=command.run_id,
+            sequence_number=command.sequence_number,
+            processing_time_ms=elapsed_ms,
+            default_order_quantity=self._default_order_quantity,
+        )
+
+        published = False
         if self._registration is not None and not self._registration.can_publish_recommendations:
             logger.warning(
                 "Публикация рекомендации (%s: %s) отклонена: регистрация сервиса заблокирована платформой. Причина: '%s'",
@@ -64,9 +94,17 @@ class ProcessCandleUseCase:
         elif self._publisher is not None:
             try:
                 await self._publisher.publish_recommendation(recommendation)
+                published = True
             except Exception as exc:
                 logger.error("Ошибка при публикации рекомендации в брокер: %s", exc)
                 raise
+
+        if self._registration is not None:
+            self._registration.mark_candle_processed(
+                event_id=command.event_id,
+                sequence_number=command.sequence_number,
+                published=published,
+            )
 
         return TradeRecommendationDTO(
             ticker=recommendation.ticker,

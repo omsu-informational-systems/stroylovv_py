@@ -1,6 +1,7 @@
 import logging
 
 from src.domain.entities.recommendation import TradeRecommendation
+from src.domain.entities.registration import ServiceRegistration
 from src.domain.ports.publisher import (
     HeartbeatPublisherPort,
     RecommendationPublisherPort,
@@ -20,100 +21,102 @@ class KafkaPublisherAdapter(
     RegistrationPublisherPort,
 ):
     """
-    Адаптер публикации сообщений в Kafka (Infrastructure Layer).
+    Адаптер публикации сообщений в защищённую Kafka (Infrastructure Layer).
 
     Реализует порты:
-    - RecommendationPublisherPort
-    - HeartbeatPublisherPort
-    - RegistrationPublisherPort
+    - RecommendationPublisherPort -> strategy.recommendation.created
+    - HeartbeatPublisherPort -> account.service.heartbeat
+    - RegistrationPublisherPort -> account.registration.request
     """
 
     def __init__(
         self,
         connection_manager: KafkaConnectionManager,
         settings: Settings,
+        registration: ServiceRegistration,
     ) -> None:
         self._manager = connection_manager
         self._settings = settings
+        self._registration = registration
 
     async def publish_recommendation(self, recommendation: TradeRecommendation) -> None:
         """Публикация торговой рекомендации в тему strategy.recommendation.created."""
         payload_json = RecommendationMapper.to_kafka_json(
             recommendation=recommendation,
-            service_name=self._settings.app_name,
-            secret_key=self._settings.secret_key,
+            registration=self._registration,
+            secret_key=self._settings.effective_secret_key,
             schema_version=self._settings.schema_version,
         )
+        # Ключ сообщения Kafka: eventId исходной свечи (согласно эталонному протоколу)
+        message_key = (
+            recommendation.source_event_id or recommendation.recommendation_id
+        ).encode("utf-8")
+
         await self._send(
             topic=self._settings.topic_recommendation_created,
-            key=recommendation.ticker.encode("utf-8"),
+            key=message_key,
             value=payload_json.encode("utf-8"),
         )
         logger.info(
-            "Рекомендация опубликована в %s: ticker=%s, signal=%s, close=%.2f, confidence=%.4f",
+            "Рекомендация подтверждена брокером (%s): instrument=%s, seq=%s, signal=%s, confidence=%.4f, qty=%d",
             self._settings.topic_recommendation_created,
             recommendation.ticker,
+            recommendation.sequence_number,
             recommendation.signal.value,
-            recommendation.close_value,
             recommendation.confidence_value,
+            recommendation.suggested_quantity,
         )
 
-    async def publish_heartbeat(self, service_name: str) -> None:
+    async def publish_heartbeat(self, registration: ServiceRegistration) -> None:
         """Публикация сигнала состояния в тему account.service.heartbeat."""
         payload_json = EventMapper.to_heartbeat_json(
-            service_name=service_name,
-            secret_key=self._settings.secret_key,
+            registration=registration,
+            secret_key=self._settings.effective_secret_key,
+            app_version=self._settings.app_version,
             schema_version=self._settings.schema_version,
         )
         await self._send(
             topic=self._settings.topic_heartbeat,
-            key=service_name.encode("utf-8"),
+            key=registration.service_name.encode("utf-8"),
             value=payload_json.encode("utf-8"),
         )
-        logger.debug("Heartbeat отправлен в тему %s", self._settings.topic_heartbeat)
+        logger.debug(
+            "Heartbeat отправлен (%s): processed=%d, published=%d, lastSeq=%s",
+            self._settings.topic_heartbeat,
+            registration.processed_candles,
+            registration.published_recommendations,
+            registration.last_processed_sequence_number,
+        )
 
-    async def publish_registration(
-        self,
-        service_name: str,
-        account_name: str = "",
-        group_id: str = "",
-        strategy_name: str = "",
-    ) -> None:
+    async def publish_registration(self, registration: ServiceRegistration) -> str:
         """Публикация запроса регистрации в тему account.registration.request."""
-        acc_name = account_name or self._settings.account_name
-        grp_id = group_id or self._settings.group_id
-        strat_name = strategy_name or self._settings.strategy_name
-
-        payload_json = EventMapper.to_registration_json(
-            service_name=service_name,
-            secret_key=self._settings.secret_key,
-            account_name=acc_name,
-            group_id=grp_id,
-            strategy_name=strat_name,
+        event_id, payload_json = EventMapper.to_registration_envelope(
+            registration=registration,
+            secret_key=self._settings.effective_secret_key,
             schema_version=self._settings.schema_version,
         )
         await self._send(
             topic=self._settings.topic_registration_request,
-            key=service_name.encode("utf-8"),
+            key=registration.service_name.encode("utf-8"),
             value=payload_json.encode("utf-8"),
         )
         logger.info(
-            "Запрос регистрации отправлен в %s: serviceName=%s, accountName=%s, groupId=%s, strategyName=%s",
+            "Запрос регистрации подтверждён брокером (%s): eventId=%s, serviceName=%s, accountId=%s, groupId=%s, strategyId=%s",
             self._settings.topic_registration_request,
-            service_name,
-            acc_name,
-            grp_id,
-            strat_name,
+            event_id,
+            registration.service_name,
+            registration.account_id,
+            registration.group_id,
+            registration.strategy_id,
         )
+        return event_id
 
     async def _send(self, topic: str, key: bytes, value: bytes) -> None:
-        producer = self._manager.producer
-        if producer is None:
+        if self._manager.producer is None:
             logger.debug(
-                "Kafka Producer не активен, сообщение пропущено (тема: %s, ключ: %s)",
+                "Kafka Producer не активен, сообщение пропущено (тема: %s)",
                 topic,
-                key.decode("utf-8", errors="ignore"),
             )
             return
 
-        await producer.send_and_wait(topic=topic, key=key, value=value)
+        await self._manager.publish(topic=topic, key=key, value=value)

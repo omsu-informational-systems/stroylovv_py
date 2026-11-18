@@ -15,14 +15,15 @@ ENV POETRY_VERSION=1.8.3 \
 
 ENV PATH="$POETRY_HOME/bin:$PATH"
 
-# Устанавливаем Poetry напрямую через pip без тяжелых системных пакетов apt
+# Устанавливаем Poetry напрямую через pip без тяжёлых системных пакетов apt
 RUN pip install --no-cache-dir poetry
 
 # Копируем манифест зависимостей
 COPY pyproject.toml poetry.lock* ./
 
-# Устанавливаем только production-зависимости, без корня пакета
-RUN poetry install --only main --no-root --no-ansi
+# Обновляем lock при расхождении с pyproject.toml и ставим только production-зависимости
+RUN (poetry check --lock || poetry lock) \
+    && poetry install --only main --no-root --no-ansi
 
 # ─────────────────────────────────────────────
 # Stage 2: runner — минимальный runtime-образ
@@ -38,8 +39,9 @@ RUN groupadd --system appgroup && useradd --system --gid appgroup --no-create-ho
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Копируем только исходный код сервиса
+# Копируем исходный код сервиса и скрипт диагностики
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 import pytest
 
 from src.domain.entities.candle import Candle
 from src.domain.entities.channel import DonchianChannel
+from src.domain.entities.registration import ServiceRegistration
 from src.domain.exceptions.base import (
     InvalidCandleDataError,
     InvalidConfidenceError,
@@ -138,4 +140,53 @@ def test_donchian_channel_aggregate_breakouts() -> None:
 def test_donchian_channel_invalid_window() -> None:
     with pytest.raises(InvalidWindowSizeError):
         DonchianChannel(window=1)
+
+
+def test_price_decimal_arithmetic_and_invariants() -> None:
+    p = Price("281.40")
+    assert p.decimal_value == Decimal("281.40")
+    assert p.to_decimal_str() == "281.40"
+    assert p == Price(Decimal("281.40"))
+
+    with pytest.raises(InvalidPriceError):
+        Price("not-a-number")
+
+    with pytest.raises(InvalidPriceError):
+        Price("NaN")
+
+    with pytest.raises(InvalidPriceError):
+        Price(True)
+
+
+def test_service_registration_rich_domain_behavior() -> None:
+    reg = ServiceRegistration(
+        service_name="strategy-stroylov",
+        account_id="stroylov-v",
+        group_id="МИБ-401",
+        strategy_id="hybrid-v1",
+        max_seen_events=2,
+    )
+    assert reg.can_send_heartbeat is False
+    assert reg.status_label == "UNKNOWN"
+
+    reg.record_registration_requested("req-1")
+    assert reg.matches_registration_result(causation_id="req-1") is True
+    assert reg.matches_registration_result(causation_id="req-other") is False
+
+    reg.activate(datetime.now(timezone.utc))
+    assert reg.can_send_heartbeat is True
+    assert reg.status_label == "UP"
+
+    # Проверка ограниченного кэша дедупликации (max_seen_events=2)
+    reg.mark_candle_processed(event_id="e1", sequence_number=1, published=True)
+    reg.mark_candle_processed(event_id="e2", sequence_number=2, published=True)
+    reg.mark_candle_processed(event_id="e3", sequence_number=3, published=False)
+
+    assert reg.is_duplicate_event("e1") is False  # вытеснен из LRU
+    assert reg.is_duplicate_event("e2") is True
+    assert reg.is_duplicate_event("e3") is True
+    assert reg.processed_candles == 3
+    assert reg.published_recommendations == 2
+    assert reg.last_processed_sequence_number == 3
+
 

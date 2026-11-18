@@ -13,9 +13,10 @@ class ProcessRegistrationResultUseCase:
     """
     Сценарий использования: обработка ответа платформы account.registration.result.
 
-    При успехе: активирует статус регистрации и разрешает публикацию рекомендаций.
-    При отказе: фиксирует понятную причину отказа, блокирует публикацию рекомендаций
-    и записывает структурированный журнал ошибки.
+    - Игнорирует чужие ответы (проверка causationId и собственных идентификаторов).
+    - Никогда не выводит secretKey в журнал.
+    - При status == REGISTERED активирует регистрацию.
+    - При status == REJECTED фиксирует причину и блокирует публикацию рекомендаций.
     """
 
     def __init__(
@@ -26,31 +27,37 @@ class ProcessRegistrationResultUseCase:
         self._registration = registration
         self._expected_secret_key = expected_secret_key
 
-    async def execute(self, command: ProcessRegistrationResultCommand) -> None:
-        # Проверяем, адресовано ли событие нашему сервису
-        if command.service_name and command.service_name != self._registration.service_name:
-            return
+    async def execute(self, command: ProcessRegistrationResultCommand) -> bool:
+        if not self._registration.matches_registration_result(
+            causation_id=command.causation_id,
+            service_name=command.service_name,
+            account_id=command.account_id,
+            strategy_id=command.strategy_id,
+        ):
+            return False
+
         if command.secret_key and self._expected_secret_key:
             if command.secret_key != self._expected_secret_key:
-                return
+                return False
 
         ts = command.timestamp or datetime.now(timezone.utc)
         if command.success:
             self._registration.activate(timestamp=ts)
             logger.info(
-                "[РЕГИСТРАЦИЯ ПОДТВЕРЖДЕНА] Сервис '%s' успешно зарегистрирован на платформе. "
-                "Студент: '%s', Группа: '%s', Стратегия: '%s'. Публикация рекомендаций РАЗРЕШЕНА.",
+                "[РЕГИСТРАЦИЯ ПОДТВЕРЖДЕНА] Сервис '%s' зарегистрирован (accountId=%s, groupId=%s, strategyId=%s, status=%s).",
                 self._registration.service_name,
-                self._registration.account_name,
+                self._registration.account_id,
                 self._registration.group_id,
-                self._registration.strategy_name,
+                self._registration.strategy_id,
+                command.status or "REGISTERED",
             )
         else:
             self._registration.reject(reason=command.reason, timestamp=ts)
             logger.error(
-                "[ОТКАЗ В РЕГИСТРАЦИИ] Платформа отклонила регистрацию сервиса '%s'! "
-                "Причина отказа: %s. Публикация торговых рекомендаций ЗАБЛОКИРОВАНА.",
+                "[ОТКАЗ В РЕГИСТРАЦИИ] Платформа отклонила регистрацию сервиса '%s' (status=%s). "
+                "Причина: %s. Публикация рекомендаций ЗАБЛОКИРОВАНА.",
                 self._registration.service_name,
+                command.status or "REJECTED",
                 self._registration.rejection_reason,
             )
-
+        return True
