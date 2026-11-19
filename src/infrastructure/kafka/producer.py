@@ -41,24 +41,38 @@ class KafkaPublisherAdapter(
 
     async def publish_recommendation(self, recommendation: TradeRecommendation) -> None:
         """Публикация торговой рекомендации в тему strategy.recommendation.created."""
+        
+        # 1. DEBUG: Что мы пытаемся отправить (помогает отладить маппинг)
+        logger.debug(
+            "Подготовка к публикации рекомендации: ticker=%s, seq=%s, signal=%s, confidence=%.4f, qty=%d",
+            recommendation.ticker,
+            recommendation.sequence_number,
+            recommendation.signal.value,
+            recommendation.confidence_value,
+            recommendation.suggested_quantity,
+        )
+
+        # 2. Маппинг и формирование ключа
         payload_json = RecommendationMapper.to_kafka_json(
             recommendation=recommendation,
             registration=self._registration,
             secret_key=self._settings.effective_secret_key,
             schema_version=self._settings.schema_version,
         )
-        # Ключ сообщения Kafka: eventId исходной свечи (согласно эталонному протоколу)
-        message_key = (
-            recommendation.source_event_id or recommendation.recommendation_id
-        ).encode("utf-8")
+        
+        source_id = recommendation.source_event_id or recommendation.recommendation_id
+        message_key = source_id.encode("utf-8")
 
+        # 3. Отправка (Если producer=None, _send теперь выбросит исключение)
         await self._send(
             topic=self._settings.topic_recommendation_created,
             key=message_key,
             value=payload_json.encode("utf-8"),
         )
+
+        # 4. INFO: Честный лог об успехе (выполняется ТОЛЬКО если _send не выбросил ошибку)
         logger.info(
-            "Рекомендация подтверждена брокером (%s): instrument=%s, seq=%s, signal=%s, confidence=%.4f, qty=%d",
+            "Рекомендация успешно отправлена в Kafka (%s): ticker=%s, seq=%s, signal=%s, confidence=%.4f, qty=%d",
             self._settings.topic_recommendation_created,
             recommendation.ticker,
             recommendation.sequence_number,
@@ -66,6 +80,16 @@ class KafkaPublisherAdapter(
             recommendation.confidence_value,
             recommendation.suggested_quantity,
         )
+
+        # 5. WARNING: Проактивная проверка бизнес-аномалий
+        if recommendation.signal.value != "HOLD" and recommendation.suggested_quantity == 0:
+            logger.warning(
+                "Аномалия в рекомендации: сигнал %s, но suggested_quantity=0. "
+                "Возможно, стратегия не рассчитала объём (ticker=%s, seq=%s)",
+                recommendation.signal.value,
+                recommendation.ticker,
+                recommendation.sequence_number,
+            )
 
     async def publish_heartbeat(self, registration: ServiceRegistration) -> None:
         """Публикация сигнала состояния в тему account.service.heartbeat."""
@@ -100,8 +124,9 @@ class KafkaPublisherAdapter(
             key=registration.service_name.encode("utf-8"),
             value=payload_json.encode("utf-8"),
         )
+        # Исправлена формулировка на технически точную
         logger.info(
-            "Запрос регистрации подтверждён брокером (%s): eventId=%s, serviceName=%s, accountId=%s, groupId=%s, strategyId=%s",
+            "Запрос регистрации отправлен в Kafka (%s): eventId=%s, serviceName=%s, accountId=%s, groupId=%s, strategyId=%s",
             self._settings.topic_registration_request,
             event_id,
             registration.service_name,
@@ -112,11 +137,10 @@ class KafkaPublisherAdapter(
         return event_id
 
     async def _send(self, topic: str, key: bytes, value: bytes) -> None:
+        """Внутренний метод отправки. Fail-fast при отсутствии продюсера."""
         if self._manager.producer is None:
-            logger.debug(
-                "Kafka Producer не активен, сообщение пропущено (тема: %s)",
-                topic,
-            )
-            return
+            # КРИТИЧЕСКИ ВАЖНО: Выбрасываем ошибку, а не молча возвращаем None.
+            # Это гарантирует, что логи "успешно отправлено" выше будут правдивыми.
+            raise RuntimeError(f"Kafka Producer не активен, отправка в тему '{topic}' невозможна")
 
         await self._manager.publish(topic=topic, key=key, value=value)

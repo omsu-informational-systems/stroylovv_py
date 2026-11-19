@@ -1,3 +1,4 @@
+import logging
 from collections import deque
 from datetime import datetime, timezone
 import math
@@ -11,17 +12,9 @@ from src.domain.value_objects.confidence import Confidence
 from src.domain.value_objects.price import Price
 from src.domain.value_objects.signal import Signal
 
+logger = logging.getLogger(__name__)
 
 class HybridTrioModel:
-    """
-    Доменный агрегат гибридной стратегии для трио активов:
-    - primary_ticker (по умолчанию T): актив парной связки.
-    - benchmark_ticker (по умолчанию SBER): бенчмарк финсектора и индикатор тренда.
-    - momentum_ticker (по умолчанию OZON): ростовой лидер, торгуемый по трендовому пробою с фильтром объёма.
-
-    Все параметры и тикеры полностью настраиваются через параметры конструктора (передаются из env).
-    """
-
     def __init__(
         self,
         primary_ticker: str,
@@ -76,21 +69,24 @@ class HybridTrioModel:
         self._primary_position: Signal = Signal.HOLD
         self._benchmark_trending_up: bool = False
 
-    @property
-    def primary_ticker(self) -> str:
-        return self._primary
+    def process_candle(self, candle: Candle) -> tuple[TradeRecommendation, RecommendationCreatedEvent]:
+        ticker = candle.ticker.upper()
+        now = datetime.now(tz=timezone.utc)
 
-    @property
-    def benchmark_ticker(self) -> str:
-        return self._benchmark
+        if ticker not in self._supported_tickers:
+            return self._build_recommendation(candle, now, Signal.HOLD, 0.0)
 
-    @property
-    def momentum_ticker(self) -> str:
-        return self._momentum
+        # Защита от флэта и нулевых объёмов
+        if candle.volume <= 0.0 or candle.high.value == candle.low.value:
+            logger.debug("Пропуск свечи (flat/zero volume): ticker=%s, vol=%s", ticker, candle.volume)
+            return self._build_recommendation(candle, now, Signal.HOLD, 0.0)
 
-    @property
-    def supported_tickers(self) -> set[str]:
-        return set(self._supported_tickers)
+        self._ensure_history(ticker)
+
+        if ticker == self._momentum:
+            return self._process_momentum(candle, now)
+
+        return self._process_pairs(candle, now)
 
     def _ensure_history(self, ticker: str) -> None:
         if ticker not in self._highs:
@@ -98,71 +94,18 @@ class HybridTrioModel:
             self._lows[ticker] = deque(maxlen=self._donchian_window)
             self._volumes[ticker] = deque(maxlen=self._donchian_window)
 
-    def process_candle(
-        self,
-        candle: Candle,
-    ) -> tuple[TradeRecommendation, RecommendationCreatedEvent]:
-        ticker = candle.ticker.upper()
-        now = datetime.now(tz=timezone.utc)
-
-        # 1. Нецелевые тикеры (не входящие в настроенную корзину) -> безопасный HOLD
-        if ticker not in self._supported_tickers:
-            return self._build_recommendation(
-                ticker=ticker,
-                timestamp=now,
-                signal=Signal.HOLD,
-                close=candle.close,
-                upper=candle.high.value,
-                lower=candle.low.value,
-                confidence=0.0,
-            )
-
-        # 2. Защита от свечей выходного дня и замороженного рынка (Weekend & Flatline Trap)
-        if candle.volume <= 0.0 or candle.high.value == candle.low.value:
-            return self._build_recommendation(
-                ticker=ticker,
-                timestamp=now,
-                signal=Signal.HOLD,
-                close=candle.close,
-                upper=candle.high.value,
-                lower=candle.low.value,
-                confidence=0.0,
-            )
-
-        self._ensure_history(ticker)
-
-        # 3. Маршрутизация на алгоритмы
-        if ticker == self._momentum:
-            return self._process_momentum(candle, now)
-
-        # Для пары primary / benchmark -> Синергетическая связка
-        return self._process_pairs(candle, now)
-
-    def _process_momentum(
-        self,
-        candle: Candle,
-        now: datetime,
-    ) -> tuple[TradeRecommendation, RecommendationCreatedEvent]:
+    def _process_momentum(self, candle: Candle, now: datetime) -> tuple[TradeRecommendation, RecommendationCreatedEvent]:
         ticker = self._momentum
         highs = self._highs[ticker]
         lows = self._lows[ticker]
         vols = self._volumes[ticker]
-
         close_val = candle.close.value
 
         if len(highs) < self._donchian_window:
             highs.append(candle.high.value)
             lows.append(candle.low.value)
             vols.append(candle.volume)
-            return self._build_recommendation(
-                ticker=ticker,
-                timestamp=now,
-                signal=Signal.HOLD,
-                close=candle.close,
-                upper=candle.high.value,
-                lower=candle.low.value,
-                confidence=0.0,
-            )
+            return self._build_recommendation(candle, now, Signal.HOLD, 0.0, reason=f"Накопление окна (моментум): {len(highs)}/{self._donchian_window}")
 
         upper = max(highs)
         lower = min(lows)
@@ -171,82 +114,60 @@ class HybridTrioModel:
 
         signal = Signal.HOLD
         confidence = 0.0
+        reason = "Удержание (нет пробоя или объёма)"
 
-        # Пробой с институциональным объёмом
         if close_val > upper and candle.volume >= (avg_vol * self._vol_mult):
             signal = Signal.BUY
             confidence = min(1.0, (close_val - upper) / (bands.width or 1.0) * 2.0)
+            reason = f"Пробой канала Дончиана с объёмом {candle.volume:.1f} > {avg_vol * self._vol_mult:.1f}"
         elif close_val < (upper + lower) / 2.0:
-            # Выход по средней линии канала (Trailing Exit)
             signal = Signal.HOLD
             confidence = 0.0
 
-        # Обновляем историю
         highs.append(candle.high.value)
         lows.append(candle.low.value)
         vols.append(candle.volume)
 
-        return self._build_recommendation(
-            ticker=ticker,
-            timestamp=now,
-            signal=signal,
-            close=candle.close,
-            upper=bands.upper,
-            lower=bands.lower,
-            confidence=confidence,
-        )
+        return self._build_recommendation(candle, now, signal, confidence, upper, lower, reason)
 
-    def _process_pairs(
-        self,
-        candle: Candle,
-        now: datetime,
-    ) -> tuple[TradeRecommendation, RecommendationCreatedEvent]:
+    def _process_pairs(self, candle: Candle, now: datetime) -> tuple[TradeRecommendation, RecommendationCreatedEvent]:
         ticker = candle.ticker.upper()
         self._last_prices[ticker] = candle.close.value
 
-        # Обновляем отношение цен Primary / Benchmark
         if self._primary in self._last_prices and self._benchmark in self._last_prices:
-            bench_p = self._last_prices[self._benchmark]
-            if bench_p > 0 and ticker == self._primary:
-                ratio = self._last_prices[self._primary] / bench_p
-                self._ratios.append(ratio)
+            current_ratio = self._last_prices[self._primary] / self._last_prices[self._benchmark]
+            self._ratios.append(current_ratio)  
 
         highs = self._highs[ticker]
         lows = self._lows[ticker]
         vols = self._volumes[ticker]
 
-        # Недостаточно данных для окна парного трейдинга
         if len(self._ratios) < self._pairs_window or len(highs) < self._donchian_window:
             highs.append(candle.high.value)
             lows.append(candle.low.value)
             vols.append(candle.volume)
             return self._build_recommendation(
-                ticker=ticker,
-                timestamp=now,
-                signal=Signal.HOLD,
-                close=candle.close,
-                upper=candle.high.value,
-                lower=candle.low.value,
-                confidence=0.0,
+                candle, now, Signal.HOLD, 0.0, 
+                reason=f"Накопление окна (пары): ratios={len(self._ratios)}/{self._pairs_window}, highs={len(highs)}/{self._donchian_window}"
             )
 
-        # Расчет Z-score спреда
         n = len(self._ratios)
         mean_r = sum(self._ratios) / n
         var_r = sum((r - mean_r) ** 2 for r in self._ratios) / n
         std_r = math.sqrt(var_r)
 
         if std_r < self._min_std_ratio:
-            signal = Signal.HOLD
-            confidence = 0.0
-            z_score = 0.0
-        else:
-            current_r = self._last_prices.get(self._primary, 1.0) / (
-                self._last_prices.get(self._benchmark, 1.0) or 1.0
+            highs.append(candle.high.value)
+            lows.append(candle.low.value)
+            vols.append(candle.volume)
+            return self._build_recommendation(
+                candle, now, Signal.HOLD, 0.0, 
+                reason=f"Низкая волатильность спреда: std={std_r:.6f} < min={self._min_std_ratio}"
             )
-            z_score = (current_r - mean_r) / std_r
 
-        # Обновление статуса тренда Benchmark до добавления текущей свечи в окно
+        current_r = self._last_prices.get(self._primary, 1.0) / (self._last_prices.get(self._benchmark, 1.0) or 1.0)
+        z_score = (current_r - mean_r) / std_r
+
         if ticker == self._benchmark and len(highs) >= self._donchian_window:
             bench_upper = max(highs)
             bench_lower = min(lows)
@@ -256,43 +177,37 @@ class HybridTrioModel:
                 self._benchmark_trending_up = False
 
         bench_trending_up = self._benchmark_trending_up
-
         signal = Signal.HOLD
         confidence = 0.0
+        reason = "Удержание (Z-score в нейтральной зоне)"
 
         if ticker == self._primary:
             if z_score <= -self._z_entry:
-                # Primary аномально отстал
                 signal = Signal.BUY
-                if bench_trending_up:
-                    # Двойное подтверждение: Benchmark пробивает вверх + Primary отстает
-                    confidence = 1.0
-                else:
-                    confidence = min(1.0, abs(z_score) / 3.0)
+                confidence = 1.0 if bench_trending_up else min(1.0, abs(z_score) / 3.0)
+                reason = f"Primary отстал (Z={z_score:.2f}), Benchmark тренд={'UP' if bench_trending_up else 'DOWN'}"
                 self._primary_position = Signal.BUY
             elif z_score >= self._z_entry:
                 signal = Signal.SELL
                 confidence = min(1.0, abs(z_score) / 3.0)
+                reason = f"Primary перегрет (Z={z_score:.2f})"
                 self._primary_position = Signal.SELL
             elif abs(z_score) <= self._z_exit:
-                signal = Signal.HOLD
-                confidence = 0.0
                 self._primary_position = Signal.HOLD
             else:
                 signal = self._primary_position
                 confidence = min(1.0, abs(z_score) / 3.0)
+                reason = f"Следование позиции (Z={z_score:.2f})"
 
         elif ticker == self._benchmark:
             if z_score >= self._z_entry:
                 signal = Signal.BUY
                 confidence = min(1.0, abs(z_score) / 3.0)
+                reason = f"Benchmark пробой вверх (Z={z_score:.2f})"
             elif z_score <= -self._z_entry:
-                # Если Benchmark сам в аптренде, не шортим его против тренда
                 signal = Signal.HOLD if bench_trending_up else Signal.SELL
                 confidence = min(1.0, abs(z_score) / 3.0)
-            elif abs(z_score) <= self._z_exit:
-                signal = Signal.HOLD
-                confidence = 0.0
+                reason = f"Benchmark пробой вниз (Z={z_score:.2f}), тренд={'UP(игнор)' if bench_trending_up else 'DOWN'}"
 
         upper_band = candle.close.value * (1 + (std_r / (mean_r or 1.0)) * self._z_entry)
         lower_band = max(0.01, candle.close.value * (1 - (std_r / (mean_r or 1.0)) * self._z_entry))
@@ -301,43 +216,51 @@ class HybridTrioModel:
         lows.append(candle.low.value)
         vols.append(candle.volume)
 
-        return self._build_recommendation(
-            ticker=ticker,
-            timestamp=now,
-            signal=signal,
-            close=candle.close,
-            upper=upper_band,
-            lower=lower_band,
-            confidence=confidence,
-        )
+        return self._build_recommendation(candle, now, signal, confidence, upper_band, lower_band, reason)
 
     def _build_recommendation(
         self,
-        ticker: str,
+        candle: Candle,
         timestamp: datetime,
         signal: Signal,
-        close: Price,
-        upper: float,
-        lower: float,
         confidence: float,
+        upper: float | None = None,
+        lower: float | None = None,
+        reason: str = "",
     ) -> tuple[TradeRecommendation, RecommendationCreatedEvent]:
-        bands = DonchianBands(upper=max(upper, lower), lower=min(upper, lower))
+        """Создаёт сущность и ОБОГАЩАЕТ её контекстом (исправление бага с qty=0)."""
+        bands = DonchianBands(
+            upper=max(upper or candle.high.value, lower or candle.low.value),
+            lower=min(upper or candle.high.value, lower or candle.low.value)
+        )
         conf_vo = Confidence(round(confidence, 4))
+        
         rec = TradeRecommendation(
-            ticker=ticker,
+            ticker=candle.ticker.upper(),
             timestamp=timestamp,
             signal=signal,
-            close=close,
+            close=candle.close,
             bands=bands,
             confidence=conf_vo,
+            source_event_id=getattr(candle, 'event_id', None),
+            correlation_id=getattr(candle, 'correlation_id', None),
+            run_id=getattr(candle, 'run_id', None),
+            sequence_number=getattr(candle, 'sequence_number', None),
         )
+        
+        # КРИТИЧЕСКИ ВАЖНО: Вызываем enrich_context, чтобы проставить suggested_quantity и reason
+        rec.enrich_context(
+            default_order_quantity=1,
+            reason=reason or rec.reason,
+        )
+
         evt = RecommendationCreatedEvent(
-            ticker=ticker,
-            timestamp=timestamp,
-            signal=signal,
-            close=close.value,
-            upper_band=bands.upper,
-            lower_band=bands.lower,
-            confidence=conf_vo.value,
+            ticker=rec.ticker,
+            timestamp=rec.timestamp,
+            signal=rec.signal,
+            close=rec.close.value,
+            upper_band=rec.upper_band,
+            lower_band=rec.lower_band,
+            confidence=rec.confidence_value,
         )
         return rec, evt
